@@ -2,13 +2,35 @@ import asyncio
 import aiohttp
 import requests
 import datetime
-import pandas as pd
+
 
 from Models import Base, Session, SwapiPeople
 from dsn import engine
 
 URL = "https://swapi.dev/api/people/"
 
+
+def _sor(result: list):
+    list_ = []
+    for r in result:
+        if r.get('name'):
+            dict_person = {
+                'name': r['name'],
+                'height': r['height'],
+                'mass': r['mass'],
+                'hair_color': r['hair_color'],
+                'skin_color': r['skin_color'],
+                'eye_color': r['eye_color'],
+                'birth_year': r['birth_year'],
+                'gender': r['gender'],
+                'homeworld': r['homeworld'],
+                'films': r['films'],
+                'species': r['species'],
+                'vehicles': r['vehicles'],
+                'starships': r['starships']
+            }
+            list_.append(dict_person)
+    return list_
 
 def _get_people_1():
     result = requests.get(URL).json()
@@ -36,62 +58,38 @@ async def _get_people_2(id_: int, client_session):
         cor_vehicles = download_links('vehicles', "name", result, client_session)
         list_ = [cor_films, cor_species, cor_starships, cor_vehicles]
         cor_result = await asyncio.gather(*list_)
-        result['films'] = cor_result[0]
-        result['species'] = cor_result[1]
-        result['starships'] = cor_result[2]
-        result['vehicles'] = cor_result[3]
+        result['films'] = ", ".join(cor_result[0])
+        result['species'] = ", ".join(cor_result[1])
+        result['starships'] = ", ".join(cor_result[2])
+        result['vehicles'] = ", ".join(cor_result[3])
         return result
 
 
+async def past_to_db(result: list):
+    async with Session() as session:
+        objects_list = [SwapiPeople(**i) for i in result]
+        session.add_all(objects_list)
+        await session.commit()
+
+
 async def cor():
-    # async with engine.begin() as con:
-    #     await con.run_sync(Base.metadata.create_all)
-    #
+    async with engine.begin() as con:
+        await con.run_sync(Base.metadata.create_all)
+
     async with aiohttp.ClientSession() as client_session:
         n = _get_people_1()
         list_ = [_get_people_2(i, client_session) for i in range(1, n+1)]
         result = await asyncio.gather(*list_)
-    # L = []
-    for i in result:
-        if i.get('name'):
-            print(i)
 
+    result_sort = _sor(result)
 
-    #     d = {'name': r['name'], 'height': r['height'], 'mass': r['mass'], 'hair_color': r['hair_color'],
-    #          'skin_color': r['skin_color'],
-    #          'eye_color': r['eye_color'], 'birth_year': r['birth_year'], 'gender': r['gender'],
-    #          'homeworld': r['homeworld'], 'films': r['films'],
-    #          'species': r['species'], 'vehicles': r['vehicles'], 'starships': r['starships']
-    #          }
-    #     L.append(d)
-    # return L
-    return result
+    await past_to_db(result_sort)
 
-
-    # async with Session() as session:
-    #     session.add(SwapiPeople(json=result))
-    #     await session.commit()
-
-
-
+    return result_sort
 
 
 if __name__ == '__main__':
     start = datetime.datetime.now()
     res = asyncio.run(cor())
-    # for i in res:
-    #     if i.get('name'):
-    #         print(i)
-    print()
     finish = datetime.datetime.now()
     print("Время работы: ", finish - start)
-
-    # L = []
-    # for i in range(1, 11):
-    #     start = datetime.datetime.now()
-    #     res = asyncio.run(cor())
-    #     finish = datetime.datetime.now()
-    #     print(f"Время работы {i}: ", finish - start)
-    #     L.append(finish - start)
-    # p = pd.DataFrame(pd.to_timedelta(L))
-    # print(f'Средне время работы: {p.mean()}')
